@@ -8,7 +8,7 @@ const Login = ({ onLogin }) => {
   const correctPassword = '111';
   
   const handleSubmit = (e) => {
-    e.preventDefault();
+    e.preventDefault();ß
     
     if (password === correctPassword) {
       // Store in localStorage so the user stays logged in
