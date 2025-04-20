@@ -274,7 +274,7 @@ const WeeklyPlan = ({ onGenerateShoppingList }) => {
       preferredByMainIngredient[recipe.mainIngredient].push(recipe);
     });
     
-    // 记录已使用的食谱和主料，避免短期内重复
+    // 记录已使用的食谱和主料，避免重复
     const usedRecipes = new Set();
     const usedMainIngredients = new Set();
     const usedPreferredMainIngredients = new Set();
@@ -343,7 +343,7 @@ const WeeklyPlan = ({ onGenerateShoppingList }) => {
       }
     });
     
-    // 第二步：为剩余的餐点分配普通食谱，避免主料重复
+    // 第二步：为剩余的餐点分配普通食谱，避免主料和食谱重复
     newPlan.forEach((day, dayIndex) => {
       const isWeekend = dayIndex >= 5; // 周六日
       
@@ -407,9 +407,16 @@ const WeeklyPlan = ({ onGenerateShoppingList }) => {
         }
       }
       
-      // 晚餐
+      // 晚餐 - 确保不与当天午餐相同
       if (!mealAssigned[dayIndex][2]) {
         let dinnerPool = dinnerRecipes.length > 0 ? [...dinnerRecipes] : [...recipes];
+        
+        // 首先排除已经在当天午餐使用的食谱
+        if (day.meals[1].recipe) {
+          dinnerPool = dinnerPool.filter(r => r.id !== day.meals[1].recipe.id);
+        }
+        
+        // 然后排除其他已使用的食谱
         dinnerPool = dinnerPool.filter(r => !usedRecipes.has(r.id));
         
         // 尝试避免主料重复（针对当天）
@@ -436,8 +443,21 @@ const WeeklyPlan = ({ onGenerateShoppingList }) => {
           }
         }
         
+        // 如果没有可用的菜谱，重新从所有晚餐菜谱中选择，但仍然排除当天午餐的菜谱
         if (dinnerPool.length === 0) {
           dinnerPool = dinnerRecipes.length > 0 ? [...dinnerRecipes] : [...recipes];
+          if (day.meals[1].recipe) {
+            dinnerPool = dinnerPool.filter(r => r.id !== day.meals[1].recipe.id);
+          }
+        }
+        
+        // 如果仍然没有可用菜谱（极少情况），则使用任何可用菜谱
+        if (dinnerPool.length === 0) {
+          dinnerPool = recipes;
+          // 仍然排除当天午餐菜谱
+          if (day.meals[1].recipe) {
+            dinnerPool = dinnerPool.filter(r => r.id !== day.meals[1].recipe.id);
+          }
         }
         
         if (dinnerPool.length > 0) {
@@ -479,7 +499,7 @@ const WeeklyPlan = ({ onGenerateShoppingList }) => {
     }
   };
 
-  // 原来的智能生成周计划（没有指定主料）
+  // 智能生成周计划（没有指定主料）
   const generateSmartPlan = () => {
     if (recipes.length === 0) return;
     
@@ -530,9 +550,17 @@ const WeeklyPlan = ({ onGenerateShoppingList }) => {
         }
       }
       
-      // 晚餐 - 周末选择更复杂的料理
+      // 晚餐 - 确保不与当天午餐相同
       let dinnerPool = dinnerRecipes.length > 0 ? [...dinnerRecipes] : [...recipes];
+      
+      // 首先排除已经在当天午餐使用的食谱
+      if (day.meals[1].recipe) {
+        dinnerPool = dinnerPool.filter(r => r.id !== day.meals[1].recipe.id);
+      }
+      
+      // 然后排除其他已使用的食谱
       dinnerPool = dinnerPool.filter(r => !usedRecipes.has(r.id));
+      
       // 尝试避免主料重复
       const dinnerPoolNonDuplicate = dinnerPool.filter(r => 
         !r.mainIngredient || !usedMainIngredients.has(r.mainIngredient)
@@ -547,13 +575,29 @@ const WeeklyPlan = ({ onGenerateShoppingList }) => {
         }
       }
       
-      if (dinnerPool.length === 0) dinnerPool = dinnerRecipes.length > 0 ? [...dinnerRecipes] : [...recipes];
+      // 如果没有可用的菜谱，重新从所有晚餐菜谱中选择，但仍然排除当天午餐的菜谱
+      if (dinnerPool.length === 0) {
+        dinnerPool = dinnerRecipes.length > 0 ? [...dinnerRecipes] : [...recipes];
+        if (day.meals[1].recipe) {
+          dinnerPool = dinnerPool.filter(r => r.id !== day.meals[1].recipe.id);
+        }
+      }
       
-      day.meals[2].recipe = dinnerPool[Math.floor(Math.random() * dinnerPool.length)];
-      if (day.meals[2].recipe) {
-        usedRecipes.add(day.meals[2].recipe.id);
-        if (day.meals[2].recipe.mainIngredient) {
-          usedMainIngredients.add(day.meals[2].recipe.mainIngredient);
+      // 如果仍然没有可用菜谱，则使用任何可用菜谱，但仍排除当天午餐
+      if (dinnerPool.length === 0) {
+        dinnerPool = [...recipes];
+        if (day.meals[1].recipe) {
+          dinnerPool = dinnerPool.filter(r => r.id !== day.meals[1].recipe.id);
+        }
+      }
+      
+      if (dinnerPool.length > 0) {
+        day.meals[2].recipe = dinnerPool[Math.floor(Math.random() * dinnerPool.length)];
+        if (day.meals[2].recipe) {
+          usedRecipes.add(day.meals[2].recipe.id);
+          if (day.meals[2].recipe.mainIngredient) {
+            usedMainIngredients.add(day.meals[2].recipe.mainIngredient);
+          }
         }
       }
     });
@@ -572,27 +616,45 @@ const WeeklyPlan = ({ onGenerateShoppingList }) => {
     const lunchRecipes = recipes.filter(r => r.category === '午餐' || r.category === '主菜');
     const dinnerRecipes = recipes.filter(r => r.category === '晚餐' || r.category === '主菜');
     
-    const newPlan = weeklyPlan.map(day => ({
-      ...day,
-      meals: day.meals.map(meal => {
-        let recipePool = [];
-        
-        if (meal.type === '早餐') {
-          recipePool = breakfastRecipes.length > 0 ? breakfastRecipes : recipes;
-        } else if (meal.type === '午餐') {
-          recipePool = lunchRecipes.length > 0 ? lunchRecipes : recipes;
-        } else if (meal.type === '晚餐') {
-          recipePool = dinnerRecipes.length > 0 ? dinnerRecipes : recipes;
+    const newPlan = [...weeklyPlan];
+    
+    // 为每天生成早餐和午餐
+    newPlan.forEach(day => {
+      // 早餐
+      const breakfastPool = breakfastRecipes.length > 0 ? breakfastRecipes : recipes;
+      day.meals[0].recipe = breakfastPool.length > 0 
+        ? breakfastPool[Math.floor(Math.random() * breakfastPool.length)] 
+        : null;
+      
+      // 午餐
+      const lunchPool = lunchRecipes.length > 0 ? lunchRecipes : recipes;
+      day.meals[1].recipe = lunchPool.length > 0 
+        ? lunchPool[Math.floor(Math.random() * lunchPool.length)] 
+        : null;
+    });
+    
+    // 单独生成晚餐，避免与午餐相同
+    newPlan.forEach(day => {
+      // 晚餐
+      let dinnerPool = dinnerRecipes.length > 0 ? [...dinnerRecipes] : [...recipes];
+      
+      // 排除与当天午餐相同的食谱
+      if (day.meals[1].recipe) {
+        dinnerPool = dinnerPool.filter(r => r.id !== day.meals[1].recipe.id);
+      }
+      
+      // 如果没有可用的菜谱，则使用任何可用菜谱，但仍排除当天午餐
+      if (dinnerPool.length === 0) {
+        dinnerPool = [...recipes];
+        if (day.meals[1].recipe) {
+          dinnerPool = dinnerPool.filter(r => r.id !== day.meals[1].recipe.id);
         }
-        
-        return {
-          ...meal,
-          recipe: recipePool.length > 0 
-            ? recipePool[Math.floor(Math.random() * recipePool.length)] 
-            : null
-        };
-      })
-    }));
+      }
+      
+      day.meals[2].recipe = dinnerPool.length > 0 
+        ? dinnerPool[Math.floor(Math.random() * dinnerPool.length)] 
+        : null;
+    });
     
     setWeeklyPlan(newPlan);
     
@@ -694,72 +756,72 @@ const WeeklyPlan = ({ onGenerateShoppingList }) => {
         <tbody>
           {weeklyPlan.map((day, dayIndex) => (
             <tr key={day.day}>
-            <td className="border p-2 font-semibold">{day.day}</td>
-            {day.meals.map((meal, mealIndex) => (
-              <td key={meal.type} className="border p-2">
-                <select
-                  value={meal.recipe ? meal.recipe.id : ''}
-                  onChange={(e) => {
-                    const selectedRecipe = e.target.value 
-                      ? recipes.find(r => r.id === e.target.value) 
-                      : null;
-                    handleSelectRecipe(dayIndex, mealIndex, selectedRecipe);
-                  }}
-                  className="w-full p-1 border rounded no-print"
-                >
-                  <option value="">选择食谱</option>
-                  {recipes
-                    .filter(r => 
-                      meal.type === '早餐' ? r.category === '早餐' || r.category === '通用' :
-                      meal.type === '午餐' ? r.category === '午餐' || r.category === '主菜' || r.category === '通用' :
-                      r.category === '晚餐' || r.category === '主菜' || r.category === '通用'
-                    )
-                    .map(recipe => (
-                      <option key={recipe.id} value={recipe.id}>
-                        {recipe.name}
-                      </option>
-                    ))
-                  }
-                </select>
-                {meal.recipe && (
-                  <div className="text-sm mt-1">
-                    <div className="font-medium">
-                      {meal.recipe.name}
-                    </div>
-                    <div className="text-gray-600">
-                      {meal.recipe.prepTime && `准备时间: ${meal.recipe.prepTime}`}
-                    </div>
-                    
-                    {/* 显示主料信息 */}
-                    {meal.recipe.mainIngredient && (
+              <td className="border p-2 font-semibold">{day.day}</td>
+              {day.meals.map((meal, mealIndex) => (
+                <td key={meal.type} className="border p-2">
+                  <select
+                    value={meal.recipe ? meal.recipe.id : ''}
+                    onChange={(e) => {
+                      const selectedRecipe = e.target.value 
+                        ? recipes.find(r => r.id === e.target.value) 
+                        : null;
+                      handleSelectRecipe(dayIndex, mealIndex, selectedRecipe);
+                    }}
+                    className="w-full p-1 border rounded no-print"
+                  >
+                    <option value="">选择食谱</option>
+                    {recipes
+                      .filter(r => 
+                        meal.type === '早餐' ? r.category === '早餐' || r.category === '通用' :
+                        meal.type === '午餐' ? r.category === '午餐' || r.category === '主菜' || r.category === '通用' :
+                        r.category === '晚餐' || r.category === '主菜' || r.category === '通用'
+                      )
+                      .map(recipe => (
+                        <option key={recipe.id} value={recipe.id}>
+                          {recipe.name}
+                        </option>
+                      ))
+                    }
+                  </select>
+                  {meal.recipe && (
+                    <div className="text-sm mt-1">
+                      <div className="font-medium">
+                        {meal.recipe.name}
+                      </div>
                       <div className="text-gray-600">
-                        主料: {meal.recipe.mainIngredient}
+                        {meal.recipe.prepTime && `准备时间: ${meal.recipe.prepTime}`}
                       </div>
-                    )}
-                    
-                    {/* 视频链接 */}
-                    {meal.recipe.videoLink && (
-                      <div className="mt-1 no-print">
-                        <a 
-                          href={meal.recipe.videoLink.startsWith('http') ? meal.recipe.videoLink : `https://${meal.recipe.videoLink}`} 
-                          target="_blank" 
-                          rel="noopener noreferrer"
-                          className="text-blue-500 hover:text-blue-700 text-sm hover:underline"
-                        >
-                          观看教程视频
-                        </a>
-                      </div>
-                    )}
-                  </div>
-                )}
-              </td>
-            ))}
-          </tr>
-        ))}
-      </tbody>
-    </table>
-  </div>
-);
+                      
+                      {/* 显示主料信息 */}
+                      {meal.recipe.mainIngredient && (
+                        <div className="text-gray-600">
+                          主料: {meal.recipe.mainIngredient}
+                        </div>
+                      )}
+                      
+                      {/* 视频链接 */}
+                      {meal.recipe.videoLink && (
+                        <div className="mt-1 no-print">
+                          <a 
+                            href={meal.recipe.videoLink.startsWith('http') ? meal.recipe.videoLink : `https://${meal.recipe.videoLink}`} 
+                            target="_blank" 
+                            rel="noopener noreferrer"
+                            className="text-blue-500 hover:text-blue-700 text-sm hover:underline"
+                          >
+                            观看教程视频
+                          </a>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
 };
 
 export default WeeklyPlan;
